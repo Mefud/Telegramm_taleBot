@@ -3,3 +3,4 @@ tale_stats.csv
 user_stats.csv
 venv
 .dockerignore
+data
