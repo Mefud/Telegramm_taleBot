@@ -1,0 +1,13 @@
+services:
+   tale-bot:				#Задаем имя сервиса
+      container_name: tale-bot		#Задаем явное имя контейнера
+      build:
+         context: .
+      env_file	:
+         - .env
+      restart: unless-stopped
+      command: python Bot_tale.py
+      volumes:
+         - tale-data:/bot/data
+volumes:
+   tale-data:
