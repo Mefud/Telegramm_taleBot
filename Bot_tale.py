@@ -28,11 +28,12 @@ dp = Dispatcher()
 user_data = {}
 
 #Создание папки data для хранения статистики если она не существует
-os.makedirs("data", exist_ok=True)
+DATA_DIR = "/bot/data"
+os.makedirs(DATA_DIR, exist_ok=True)
 
 """++++++++++++++СТАТИСТИКА++++++++++++++"""
-STATS_FILE = "data/user_stats.csv"
-TALE_STATS_FILE = "data/tale_stats.csv"
+STATS_FILE = os.path.join(DATA_DIR,"user_stats.csv")
+TALE_STATS_FILE = os.path.join(DATA_DIR,"tale_stats.csv")
 
 AGE_GROUP_NAMES = {"1":"1-2 года",
    		   "2":"3-5 лет",

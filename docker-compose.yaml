@@ -8,6 +8,4 @@ services:
       restart: unless-stopped
       command: python Bot_tale.py
       volumes:
-         - tale-data:/bot/data
-volumes:
-   tale-data:
+         - ./data:/bot/data		#Монтируем папку data с хоста в котейнер
