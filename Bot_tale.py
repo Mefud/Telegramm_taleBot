@@ -185,7 +185,8 @@ def get_genre_keyboard():
    	     [KeyboardButton(text ="драма"),
    	     KeyboardButton(text = "поучительная история")],
    	     [KeyboardButton(text ="фантастика"),
-   	     KeyboardButton(text = "психологическая")]]
+   	     KeyboardButton(text = "психологическая")],
+   	     [KeyboardButton(text ="придумай сам")]]
    return ReplyKeyboardMarkup(keyboard = buttons, resize_keyboard = True)
 
 def get_style_keyboard():
@@ -198,7 +199,8 @@ def get_style_keyboard():
    	     [KeyboardButton(text ="эпический/героический"),
    	     KeyboardButton(text = "темный/готический")],
    	     [KeyboardButton(text ="восточный"),
-   	     KeyboardButton(text = "скандинавский")]]
+   	     KeyboardButton(text = "скандинавский")],
+   	     [KeyboardButton(text ="придумай сам")]]
    return ReplyKeyboardMarkup(keyboard = buttons, resize_keyboard = True)
 
 init_stats_files()		#Инициализация файлов статистики при запуске
