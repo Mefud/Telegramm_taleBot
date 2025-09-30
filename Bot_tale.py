@@ -243,7 +243,8 @@ async def process_inform(message:Message):
          		      "Выбери жанр авторской сказки "
           		      "или напиши свой вариант (например: героическая история)",
           		      reply_markup = get_genre_keyboard())
-      else: await message.answer("Выберите вариант 1, 2 или 3")
+      else: await message.answer("Пожалуйста выбери возраст из предложенных вариантов",
+      				reply_markup = get_age_keyboard())
 
    #Обрабатываем выбор жанра
    elif current_step == "genre":
@@ -300,20 +301,23 @@ async def process_inform(message:Message):
   
    #Обрабатываем пол ребенка
    elif current_step == "gender":
-      user_data[user_id]["gender"] = message.text
-      user_data[user_id]["step"] = "ready"
-      await message.answer("<b><i>Отлично! Все данные собраны.\n🔮Генерирую сказку🔮</i></b>", 
-      reply_markup = ReplyKeyboardRemove())
-      
-      #Генерируем и отправляем сказку
-      story = await generate_story(user_data[user_id])
-      await message.answer(story)
+      if message.text in ["мальчик", "девочка"]:
+         user_data[user_id]["gender"] = message.text
+         user_data[user_id]["step"] = "ready"
+         await message.answer("<b><i>Отлично! Все данные собраны.\n🔮Генерирую сказку🔮</i></b>", 
+                          reply_markup=ReplyKeyboardRemove())
+        
+         #Генерируем и отправляем сказку
+         story = await generate_story(user_data[user_id])
+         await message.answer(story)
 
-      log_tale_generation(user_id, user_data[user_id])	#Логируем генерацию сказки в csv файл
-      
-      #Очищаем данные пользователя после генерации
-      del user_data[user_id]
-      
+         log_tale_generation(user_id, user_data[user_id]) #Логируем генерацию сказки в csv файл
+        
+         #Очищаем данные пользователя после генерации
+         del user_data[user_id]
+      else: 
+         await message.answer("Пожалуйста выбери пол ребенка из предложенных вариантов", 
+                          reply_markup=get_gender_keyboard())
       
 '''Генерация сказки'''
 async def generate_story(data):
