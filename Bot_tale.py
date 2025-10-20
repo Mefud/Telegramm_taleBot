@@ -13,6 +13,8 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKey
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
+from aiohttp import ClientTimeout
+from speechkit import init_tts_manager
 
 load_dotenv()
 
@@ -20,6 +22,9 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+
+#Установка таймаута для запросов
+TIMEOUT = ClientTimeout(total=30)		#30 сек
 
 bot=Bot(token=TELEGRAM_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -57,7 +62,8 @@ def init_stats_files():
 
          writer.writerow(['timestamp', 'user_id', 'age_group',
 		 'genre', 'style','location', 'hero',
-		 'enemy', 'child_name', 'gender'])	#Записать строку заголовков
+		 'enemy', 'child_name', 'gender',
+		 'audio_requested', 'voice_type'])	#Записать строку заголовков
 		 
 #Обновление статистики пользователя
 def update_user_stats(user: types.User):
@@ -102,6 +108,9 @@ def update_user_stats(user: types.User):
 #Запись статистики сказки
 def log_tale_generation(user_id, tale_data):
    timestamp = datetime.datetime.now().isoformat()	#Получение тек. даты и времени
+   audio_requested = "yes" if tale_data.get("audio_requested") else "no"
+   voice_type = tale_data.get("voice_type", "N/A")
+   
    with open(TALE_STATS_FILE, 'a', newline = '', encoding='utf-8') as f:
       writer = csv.writer(f)			#создание объекта writer для записи данных в файл
       writer.writerow([timestamp, user_id, 		#Время генерации сказки, id пользователя
@@ -112,7 +121,9 @@ def log_tale_generation(user_id, tale_data):
       			 tale_data.get('hero', 'N/A'),
       			 tale_data.get('enemy', 'N/A'),
       			 tale_data.get('child_name', 'N/A'),
-      			 tale_data.get('gender', 'N/A')])
+      			 tale_data.get('gender', 'N/A'),
+      			 audio_requested,
+      			 voice_type])
       			 	
 #Команда для просмотра статистики (ТОЛЬКО ДЛЯ АДМИНИСТРАТОРА!!!)
 ADMIN_IDS = [691555291]
@@ -167,13 +178,13 @@ async def command_stats(message: Message):
       
       
 '''Клавиатуры для разных шагов'''
-def get_age_keyboard():
+def get_age_keyboard():							#Кнопки для выбора возраста
    buttons = [[KeyboardButton(text ="1-2 года"),
    	     KeyboardButton(text = "3-5 лет")],
    	     [KeyboardButton(text = "6-8 лет")]]
    return ReplyKeyboardMarkup(keyboard = buttons, resize_keyboard = True)
 
-def get_genre_keyboard():
+def get_genre_keyboard():						#Кнопки для выбора жанра
    buttons = [[KeyboardButton(text ="волшебная сказка"),
    	     KeyboardButton(text = "сказка о животных")],
    	     [KeyboardButton(text ="бытовая сказка"),
@@ -188,7 +199,7 @@ def get_genre_keyboard():
    	     KeyboardButton(text = "психологическая")],]
    return ReplyKeyboardMarkup(keyboard = buttons, resize_keyboard = True)
 
-def get_style_keyboard():
+def get_style_keyboard():						#Кнопки для выбора стиля
    buttons = [[KeyboardButton(text ="народный/фольклорный"),
    	     KeyboardButton(text = "лирический/поэтический")],
    	     [KeyboardButton(text ="таинственный/загадочный"),
@@ -203,9 +214,19 @@ def get_style_keyboard():
 
 init_stats_files()		#Инициализация файлов статистики при запуске
 
-def get_gender_keyboard():
+def get_gender_keyboard():						#Кнопки для выбора пола ребенка
    buttons = [[KeyboardButton(text ="мальчик"),
    	     KeyboardButton(text = "девочка")]]
+   return ReplyKeyboardMarkup(keyboard = buttons, resize_keyboard = True)
+
+def get_audio_keyboard():						#Кнопки для выбора озвучки
+   buttons = [[KeyboardButton(text ="Да, хочу озвучить сказку"),
+   	     KeyboardButton(text = "Нет, мне нужен только текст")]]
+   return ReplyKeyboardMarkup(keyboard = buttons, resize_keyboard = True)
+   
+def get_voice_keyboard():						#Кнопки для выбора голоса
+   buttons = [[KeyboardButton(text ="Женский голос"),
+   	     KeyboardButton(text = "Мужской голос")]]
    return ReplyKeyboardMarkup(keyboard = buttons, resize_keyboard = True)
 
 
@@ -303,22 +324,111 @@ async def process_inform(message:Message):
    elif current_step == "gender":
       if message.text in ["мальчик", "девочка"]:
          user_data[user_id]["gender"] = message.text
-         user_data[user_id]["step"] = "ready"
+         user_data[user_id]["step"] = "audio_choice"
          await message.answer("<b><i>Отлично! Все данные собраны.\n🔮Генерирую сказку🔮</i></b>", 
-                          reply_markup=ReplyKeyboardRemove())
+            reply_markup=ReplyKeyboardRemove())
         
-         #Генерируем и отправляем сказку
+         #Генерируем сказку
          story = await generate_story(user_data[user_id])
-         await message.answer(story)
-
-         log_tale_generation(user_id, user_data[user_id]) #Логируем генерацию сказки в csv файл
-        
-         #Очищаем данные пользователя после генерации
-         del user_data[user_id]
+         user_data[user_id]["generated_story"] = story		#Сохраняем сказку
+         
+         #Отправляем текстовую версию и предлагаем озвучку
+         await message.answer(story)				#Отправляем текстовую версию сказки
+         await message.answer("🎧 <b>Хочешь получить озвученную версию этой сказки?</b>",
+            reply_markup = get_audio_keyboard()) 
+         
       else: 
          await message.answer("Пожалуйста выбери пол ребенка из предложенных вариантов", 
                           reply_markup=get_gender_keyboard())
+   
+   #Обрабатываем выбор озвучки
+   elif current_step == "audio_choice":
+      if message.text == "Да, хочу озвучить сказку":
+         #Выбираем голос
+         user_data[user_id]["step"] = "voice_choice"
+         await message.answer("<b><i>Выбери голос для озвучки сказки </i></b>🎙",
+            reply_markup=get_voice_keyboard())
       
+      elif message.text == "Нет, мне нужен только текст":
+         await message.answer("<b><i>Хорошего чтения! Если захочешь, новую сказку - напиши /start</i></b>",
+            reply_markup=ReplyKeyboardRemove())
+                 
+         #Логируем и очищаем данные
+         log_tale_generation(user_id, user_data[user_id])
+         del user_data[user_id]
+      else:
+         await message.answer("<b><i>Пожалуйста, выбери один из вариантов</i></b>",
+            reply_markup=get_audio_keyboard())
+   
+   #Обрабатываем выбор голоса
+   elif current_step == "voice_choice":
+      if message.text in ["Женский голос", "Мужской голос"]:
+         #Определяем тип голоса
+         voice_type = "женский" if "Женский" in message.text else "мужской"
+         user_data[user_id]["voice_type"] = voice_type
+         user_data[user_id]["audio_requested"] = True
+         await message.answer(f"🎧 <b><i>Создаю аудиоверсию сказки({voice_type} голос)...</i></b>",
+         reply_markup=ReplyKeyboardRemove())
+   
+         try:
+            #Получаем сохраненную сказку
+            story_text = user_data[user_id].get("generated_story", "")
+            
+            #Проверяем инициализацию TTS менеджера
+            if not tts_manager:
+               await message.answer("⚠️ <b><i>Сервис озвучки временно недоступен. Попробуйте позже.</i></b>")
+               
+               #Логируем и очищаем данные
+               log_tale_generation(user_id, user_data[user_id])
+               del user_data[user_id]
+               return
+            
+            if story_text:
+               #Генерируем аудио с выбором голоса
+               audio_file = await tts_manager_instance.text_to_speech(text = story_text.strip(),
+               						     voice_type = voice_type,
+               						     emotion = "good")
+               #Создаем название аудиофайла
+               hero_name = user_data[user_id].get('hero', 'сказка').replace(' ', '_')[:20]	#Ограничиваем длину
+               filename = f"{hero_name}_сказка.mp3"
+               
+               #Читаем данные из BytesIO
+               audio_data = audio_file.getvalue()
+               
+               #Проверяем размер файла: Telegram ограничивает 50MB)
+               if len(audio_data) > 50 * 1024 *1024:
+                  await message.answer("⚠️ <b><i>Аудиофайл слишком большой для отправки</i></b>")
+               
+               else:
+                  #Отправляем аудио с обработкой ошибок
+                  try:
+                     await message.answer_audio(audio = types.BufferedInputFile(audio_data,
+               								  filename = filename),
+               								  title = f"Сказка про {user_data[user_id].get('hero', 'героя')}",
+               								  performer = "Генератор сказок",
+               								  caption = f"Аудиоверсия ({voice_type} голос)")
+                     await message.answer("✅ <b><i>Аудиоверсия готова! Приятного прослушивания!</i></b>")
+         
+                  except Exception as send_error:
+                     print(f"Audio sending error: {send_error}")
+                     await message.answer("⚠️ <b><i>Ошибка при отправке аудио. Попробуйте позже.</i></b>!")      
+            else:
+               await message.answer("⚠️ <b><i>Текст сказки не найден</i></b>!")
+         except Exception as e:
+            print(f"Audio generation error: {e}")
+            await message.answer("⚠️ <b><i>Произошла ошибка при создании аудиоверсии</i></b>!")
+            
+         #Логируем генерацию сказки в csv файл
+         log_tale_generation(user_id, user_data[user_id])
+        
+         #Очищаем данные пользователя после генерации
+         del user_data[user_id]   
+      else:
+         await message.answer("<b><i>Пожалуйста, выбери тип голоса</i></b> 🗣",
+            reply_markup = get_voice_keyboard())
+         return						#Не очищаем данные, если выбор неправильный
+
+
 '''Генерация сказки'''
 async def generate_story(data):
    age_mapping = { "1":"1-2 года",
@@ -415,8 +525,19 @@ async def generate_story(data):
    **Мораль: дружба решает любые проблемы!"""
    
             return generated_story
+#Инициализируем TTS менеджер при старте
+tts_manager_instance = None
    
 async def main():
+   try:
+      tts_manager_instance = init_tts_manager()			#Инициализация TTS менеджера (получаем экзепляр)
+      if tts_manager_instance:
+         print("✅ Yandex SpeechKit initialized successfully!")
+      else:
+         print("Yandex SpeechKit initialization failed - check API keys")
+   except Exception as e:
+      print(f"❌ SpeechKit initialization failed: {e}")
+      
    print("Бот запущен!")
    await bot.delete_webhook(drop_pending_updates=True)
    await dp.start_polling(bot)
