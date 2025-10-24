@@ -13,8 +13,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKey
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
-from aiohttp import ClientTimeout
-from speechkit import init_tts_manager
+from speechkit import init_tts_manager, get_tts_manager
 
 load_dotenv()
 
@@ -22,9 +21,6 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-
-#Установка таймаута для запросов
-TIMEOUT = ClientTimeout(total=30)		#30 сек
 
 bot=Bot(token=TELEGRAM_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -220,8 +216,8 @@ def get_gender_keyboard():						#Кнопки для выбора пола ре�
    return ReplyKeyboardMarkup(keyboard = buttons, resize_keyboard = True)
 
 def get_audio_keyboard():						#Кнопки для выбора озвучки
-   buttons = [[KeyboardButton(text ="Да, хочу озвучить сказку"),
-   	     KeyboardButton(text = "Нет, мне нужен только текст")]]
+   buttons = [[KeyboardButton(text ="🔈 Да, хочу озвучить сказку"),
+   	     KeyboardButton(text = "Нет, мне нужен только текст 📝")]]
    return ReplyKeyboardMarkup(keyboard = buttons, resize_keyboard = True)
    
 def get_voice_keyboard():						#Кнопки для выбора голоса
@@ -334,7 +330,7 @@ async def process_inform(message:Message):
          
          #Отправляем текстовую версию и предлагаем озвучку
          await message.answer(story)				#Отправляем текстовую версию сказки
-         await message.answer("🎧 <b>Хочешь получить озвученную версию этой сказки?</b>",
+         await message.answer("\n🎧 <b>Хочешь получить озвученную версию этой сказки?</b>",
             reply_markup = get_audio_keyboard()) 
          
       else: 
@@ -343,13 +339,13 @@ async def process_inform(message:Message):
    
    #Обрабатываем выбор озвучки
    elif current_step == "audio_choice":
-      if message.text == "Да, хочу озвучить сказку":
+      if message.text == "🔈 Да, хочу озвучить сказку":
          #Выбираем голос
          user_data[user_id]["step"] = "voice_choice"
          await message.answer("<b><i>Выбери голос для озвучки сказки </i></b>🎙",
             reply_markup=get_voice_keyboard())
       
-      elif message.text == "Нет, мне нужен только текст":
+      elif message.text == "Нет, мне нужен только текст 📝":
          await message.answer("<b><i>Хорошего чтения! Если захочешь, новую сказку - напиши /start</i></b>",
             reply_markup=ReplyKeyboardRemove())
                  
@@ -367,15 +363,18 @@ async def process_inform(message:Message):
          voice_type = "женский" if "Женский" in message.text else "мужской"
          user_data[user_id]["voice_type"] = voice_type
          user_data[user_id]["audio_requested"] = True
-         await message.answer(f"🎧 <b><i>Создаю аудиоверсию сказки({voice_type} голос)...</i></b>",
+         await message.answer(f"💫 <b><i>Создаю аудиоверсию сказки ({voice_type} голос)...</i></b>",
          reply_markup=ReplyKeyboardRemove())
    
          try:
             #Получаем сохраненную сказку
             story_text = user_data[user_id].get("generated_story", "")
             
+            #Получаем TTS менеджер (используем глобальную переменную или функцию)
+            current_tts_manager = tts_manager or get_tts_manager()
+            
             #Проверяем инициализацию TTS менеджера
-            if not tts_manager:
+            if not current_tts_manager:
                await message.answer("⚠️ <b><i>Сервис озвучки временно недоступен. Попробуйте позже.</i></b>")
                
                #Логируем и очищаем данные
@@ -385,7 +384,7 @@ async def process_inform(message:Message):
             
             if story_text:
                #Генерируем аудио с выбором голоса
-               audio_file = await tts_manager_instance.text_to_speech(text = story_text.strip(),
+               audio_file = await current_tts_manager.text_to_speech(text = story_text.strip(),
                						     voice_type = voice_type,
                						     emotion = "good")
                #Создаем название аудиофайла
@@ -395,9 +394,9 @@ async def process_inform(message:Message):
                #Читаем данные из BytesIO
                audio_data = audio_file.getvalue()
                
-               #Проверяем размер файла: Telegram ограничивает 50MB)
-               if len(audio_data) > 50 * 1024 *1024:
-                  await message.answer("⚠️ <b><i>Аудиофайл слишком большой для отправки</i></b>")
+               #Проверяем размер файла: Telegram ограничивает 50MB
+               if len(audio_data) > 50 * 1024 * 1024:
+                  await message.answer("⚠️ <b><i>Аудиофайл слишком большой для отправки в Telegram</i></b>")
                
                else:
                   #Отправляем аудио с обработкой ошибок
@@ -526,17 +525,30 @@ async def generate_story(data):
    
             return generated_story
 #Инициализируем TTS менеджер при старте
-tts_manager_instance = None
+tts_manager = None
    
 async def main():
+   global tts_manager
    try:
-      tts_manager_instance = init_tts_manager()			#Инициализация TTS менеджера (получаем экзепляр)
-      if tts_manager_instance:
+      #Проверяем переменные окружения перед инициализацией
+      api_key = os.getenv("YANDEX_TTS_API_KEY")
+      folder_id = os.getenv("YANDEX_FOLDER_ID")
+      
+      print(f"🔑 Yandex API Key: {'✅ Set' if api_key else '❌ Missing'}")
+      print(f"🗂 Yandex Folder ID: {'✅ Set' if folder_id else '❌ Missing'}")
+      if api_key:
+         print(f"API Key starts with: {api_key[:10]}...")
+      if folder_id:
+         print(f" Folder ID: {folder_id}")
+         
+      tts_manager = init_tts_manager()			#Инициализируем глобальную переменную
+      if tts_manager:
          print("✅ Yandex SpeechKit initialized successfully!")
       else:
-         print("Yandex SpeechKit initialization failed - check API keys")
+         print("❌ Yandex SpeechKit initialization failed")
    except Exception as e:
       print(f"❌ SpeechKit initialization failed: {e}")
+      tts_manager = None
       
    print("Бот запущен!")
    await bot.delete_webhook(drop_pending_updates=True)
