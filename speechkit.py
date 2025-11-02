@@ -55,7 +55,7 @@ class YandexSpeechKit:
       
    def ssml_pauses(self, text):
       #Добавляем паузы для более естественной речи
-      text = text.replace('\n\n', '<break time="700ms"/>')
+      text = text.replace('\n\n', '<break time="900ms"/>')
       text = text.replace('\n', '<break time="400ms"/>')
       text = text.replace('. ', '.<break time="600ms"/>')
       text = text.replace('! ', '!<break time="500ms"/>')
@@ -112,7 +112,7 @@ class YandexSpeechKit:
       result = '. '.join(enhanced_sentences)
       
       #Добавляем SSML паузы
-      result = result.replace('\n\n', '<break time="700ms"/>')
+      result = result.replace('\n\n', '<break time="900ms"/>')
       result = result.replace('\n', '<break time="400ms"/>')
       result = result.replace('. ', '.<break time="600ms"/>')
       result = result.replace('! ', '!<break time="500ms"/>')
