@@ -7,6 +7,8 @@ annotated-types==0.7.0
 async-timeout==5.0.1
 attrs==25.3.0
 certifi==2025.8.3
+DAWG-Python==0.7.2
+docopt==0.6.2
 frozenlist==1.7.0
 idna==3.10
 magic-filter==1.0.12
@@ -14,6 +16,8 @@ multidict==6.6.4
 propcache==0.3.2
 pydantic==2.11.7
 pydantic_core==2.33.2
+pymorphy2==0.9.1
+pymorphy2-dicts-ru==2.4.417127.4579844
 python-dotenv==1.1.1
 PyYAML==6.0.3
 typing-inspection==0.4.1
