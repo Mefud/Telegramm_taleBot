@@ -104,7 +104,7 @@ def update_user_stats(user: types.User):
 #Запись статистики сказки
 def log_tale_generation(user_id, tale_data):
    timestamp = datetime.datetime.now().isoformat()	#Получение тек. даты и времени
-   audio_requested = "yes" if tale_data.get("audio_requested") else "no"
+   audio_requested = "yes" if tale_data.get("audio_requested", False) else "no"
    voice_type = tale_data.get("voice_type", "N/A")
    
    with open(TALE_STATS_FILE, 'a', newline = '', encoding='utf-8') as f:
@@ -139,36 +139,57 @@ async def command_stats(message: Message):
          reader = csv.DictReader(f)	#DictReader исп-ет 1-ю строку ф-ла, как заголовки столбцов
          for row in reader:		#Пройти по каждой строке (каждому пользователю)
             total_users +=1		#Увели-е счетчика пользователей на 1 для каждой строки
-            total_tales += int(row.get('tales_generated', 0))	#Добавле-е кол-ва сказок этого
-            							# пользо-ля к общему счетчику
+            total_tales += int(row.get('tales_generated', 0))	#Добавле-е кол-ва сказок этого пользо-ля к общему счетчику
                
    #Статистика по сказкам
    age_stats = {}
    genre_stats = {}
+   audio_stats = {}			#Статистика озвучки
+   voice_stats = {}			#Статистика голосов
    
    if Path(TALE_STATS_FILE).exists():
+      print(f"📊 Чтение файла статистики сказок: {TALE_STATS_FILE}")
       with open(TALE_STATS_FILE, 'r', newline = '', encoding='utf-8') as f:
          reader = csv.DictReader(f)
+         row_count = 0
          for row in reader:
+            row_count +=1
             age = row.get('age_group', 'N/A')
             genre = row.get('genre', 'N/A')
+            audio_requested = row.get('audio_requested', 'no')
+            voice_type = row.get('voice_type', 'N/A')
+            print(f"📖 Сказка {row_count}: audio_requested = '{audio_requested}', voice_type = '{voice_type}'")
+            
             age_stats[age] = age_stats.get(age, 0) + 1
             genre_stats[genre] = genre_stats.get(genre, 0) + 1
+            audio_stats[audio_requested] = audio_stats.get(audio_requested, 0) + 1
+            if voice_type != 'N/A':
+               voice_stats[voice_type] = voice_stats.get(voice_type, 0) + 1
+         print(f"📊 Итоги: всего сказок = {row_count}, audio_stats = {audio_stats}, voice_stats = {voice_stats}")
                
    #Формируем отчет
    report = f"""
 📊 Статистика бота:\n
 👥 Всего пользователей: {total_users}
 📖 Всего сгенерировано сказок: {total_tales}
-\nВозрастные группы:\n"""
+🎧 Всего озвучено сказок: {audio_stats.get('yes', 0)}\n"""
+   if voice_stats:
+      report += f"\nТип голоса:\n"
+      for voice_type, count in sorted(voice_stats.items(),
+      key = lambda x: x[1],
+      reverse = True):
+         report += f" • {voice_type}: {count}\n"
+         
+   report += f"\nВозрастные группы:\n"
    for age_key in sorted(age_stats.keys()):
       count = age_stats[age_key]
       age_name = AGE_GROUP_NAMES.get(age_key)
       report += f" • {age_name}: {count}\n"
+   
    report += "\nПопулярные жанры:\n"
    for genre, count in list(sorted(genre_stats.items(),
    key = lambda x: x[1], reverse = True))[:5]:
-      report += f" • {genre}: {count}\n"
+      report += f" • {genre}: {count}\n"  
       
    await message.answer(report)
       
@@ -377,7 +398,9 @@ async def process_inform(message:Message):
             if not current_tts_manager:
                await message.answer("⚠️ <b><i>Сервис озвучки временно недоступен. Попробуйте позже.</i></b>")
                
-               #Логируем и очищаем данные
+               #Логируем даже при ошибке TTS, но отмечаем как без аудио
+               user_data[user_id]["audio_requested"] = False
+               
                log_tale_generation(user_id, user_data[user_id])
                del user_data[user_id]
                return
@@ -397,7 +420,12 @@ async def process_inform(message:Message):
                #Проверяем размер файла: Telegram ограничивает 50MB
                if len(audio_data) > 50 * 1024 * 1024:
                   await message.answer("⚠️ <b><i>Аудиофайл слишком большой для отправки в Telegram</i></b>")
-               
+                  
+                  #Логируем как неудачную попытку озвучки
+                  log_tale_generation(user_id, user_data[user_id])
+                  del user_data[user_id]
+                  return
+                                    
                else:
                   #Отправляем аудио с обработкой ошибок
                   try:
@@ -407,21 +435,43 @@ async def process_inform(message:Message):
                								  performer = "Генератор сказок",
                								  caption = f"Аудиоверсия ({voice_type} голос)")
                      await message.answer("✅ <b><i>Аудиоверсия готова! Приятного прослушивания!</i></b>")
+
+                     #Логируем генерацию сказки в csv файл
+                     log_tale_generation(user_id, user_data[user_id])
+                     print(f"✅ Успешно залогирована озвученная сказка для пользователя {user_id}")
          
                   except Exception as send_error:
                      print(f"Audio sending error: {send_error}")
-                     await message.answer("⚠️ <b><i>Ошибка при отправке аудио. Попробуйте позже.</i></b>!")      
+                     await message.answer("⚠️ <b><i>Ошибка при отправке аудио. Попробуйте позже.</i></b>!")
+                     
+                     #Логируем как неудачную попытку озвучки
+                     log_tale_generation(user_id, user_data[user_id])
+                     #Очищаем данные пользователя после обнаружения ошибки
+                     del user_data[user_id]
+                     return      
             else:
                await message.answer("⚠️ <b><i>Текст сказки не найден</i></b>!")
+               
+               #Логируем как ошибку
+               user_data[user_id]["audio_requested"] = False
+               log_tale_generation(user_id, user_data[user_id])
+               #Очищаем данные пользователя после обнаружения ошибки
+               del user_data[user_id]
+               return
+               
          except Exception as e:
             print(f"Audio generation error: {e}")
             await message.answer("⚠️ <b><i>Произошла ошибка при создании аудиоверсии</i></b>!")
-            
-         #Логируем генерацию сказки в csv файл
-         log_tale_generation(user_id, user_data[user_id])
         
-         #Очищаем данные пользователя после генерации
-         del user_data[user_id]   
+            #Логируем как неудачную попытку озвучки
+            log_tale_generation(user_id, user_data[user_id])
+            #Очищаем данные пользователя после обнаружения ошибки
+            del user_data[user_id]
+            return
+            
+         #Очищаем данные пользователя после успешной генерации
+         if user_id in user_data:
+            del user_data[user_id]
       else:
          await message.answer("<b><i>Пожалуйста, выбери тип голоса</i></b> 🗣",
             reply_markup = get_voice_keyboard())
